@@ -30,6 +30,7 @@ type config struct {
 	DownloadFiles   bool   `env:"DOWNLOAD_FILES" long:"download-files" description:"Download files"`
 	DownloadAvatars bool   `env:"DOWNLOAD_AVATARS" long:"download-avatars" description:"Download avatars"`
 	IncludeArchived bool   `env:"SKIP_ARCHIVED" long:"include-archived" description:"Include archived channels"`
+	SkipDownloaded  bool   `env:"SKIP_DOWNLOADED" long:"skip-downloaded" description:"Skip already downloaded files"`
 }
 
 var (
@@ -90,6 +91,7 @@ func run() error {
 			cfg.DownloadAvatars,
 			cfg.DownloadFiles,
 			cfg.IncludeArchived,
+			cfg.SkipDownloaded,
 		)
 		p := tea.NewProgram(model)
 		if _, err := p.Run(); err != nil {
@@ -108,6 +110,9 @@ func run() error {
 			}
 			if i == includeArchivedIndex {
 				cfg.IncludeArchived = true
+			}
+			if i == skipDownloadedIndex {
+				cfg.SkipDownloaded = true
 			}
 		}
 
@@ -137,7 +142,7 @@ func run() error {
 		case "":
 			continue
 		default:
-			err := exportChannel(c, channel)
+			err := exportChannel(c, channel, cfg.SkipDownloaded)
 			if err != nil {
 				return fmt.Errorf("could not export channel %q: %w", channel, err)
 			}
@@ -145,7 +150,7 @@ func run() error {
 	}
 
 	if len(channelTypes) > 0 {
-		err := exportChannels(c, channelTypes)
+		err := exportChannels(c, channelTypes, cfg.SkipDownloaded)
 		if err != nil {
 			return fmt.Errorf("could not export channels: %w", err)
 		}
@@ -183,7 +188,15 @@ func getToken(c *SlackClient) error {
 	return nil
 }
 
-func exportChannel(c *SlackClient, channelID string) error {
+func exportChannel(c *SlackClient, channelID string, skipDownloaded bool) error {
+	outputFilename := filepath.Join(cfg.Output, channelID+".json")
+
+	if skipDownloaded {
+		if _, err := os.Stat(outputFilename); err == nil {
+			return nil
+		}
+	}
+
 	channelInfo, err := c.GetChannelInfo(channelID)
 	if err != nil {
 		return fmt.Errorf("could not get channel %q info: %w", channelID, err)
@@ -192,8 +205,6 @@ func exportChannel(c *SlackClient, channelID string) error {
 	if channelInfo.IsArchived && !cfg.IncludeArchived {
 		return nil
 	}
-
-	outputFilename := filepath.Join(cfg.Output, channelID+".json")
 
 	// check if the file already exists
 	if _, err := os.Stat(outputFilename); err == nil {
@@ -220,7 +231,7 @@ func exportChannel(c *SlackClient, channelID string) error {
 
 	var files map[string]string
 	if cfg.DownloadFiles {
-		files, err = c.DownloadFiles(channelID)
+		files, err = c.DownloadFiles(channelID, cfg.SkipDownloaded)
 		if err != nil {
 			return fmt.Errorf("could not download files: %w", err)
 		}
@@ -251,7 +262,7 @@ func exportChannel(c *SlackClient, channelID string) error {
 	return nil
 }
 
-func exportChannels(c *SlackClient, types []string) error {
+func exportChannels(c *SlackClient, types []string, skipDownloaded bool) error {
 	channels, err := c.GetChannels(types)
 	if err != nil {
 		return fmt.Errorf("could not get public channels: %w", err)

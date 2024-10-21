@@ -446,7 +446,11 @@ func (sc *SlackClient) processRichTextSectionElements(elements []slack.RichTextS
 }
 
 // DownloadFiles downloads all the files in the channel.
-func (sc *SlackClient) DownloadFiles(channelID string) (map[string]string, error) {
+func (sc *SlackClient) DownloadFiles(channelID string, skipDownloaded bool) (map[string]string, error) {
+	if len(sc.files) == 0 {
+		return nil, nil
+	}
+
 	result := make(map[string]string)
 
 	// create directory for files
@@ -455,9 +459,25 @@ func (sc *SlackClient) DownloadFiles(channelID string) (map[string]string, error
 		return nil, fmt.Errorf("could not create directory: %w", err)
 	}
 
-	for id, url := range sc.files {
-		filename, err := sc.downloadFile(channelID, id, url)
-		if err != nil {
+	for id, file := range sc.files {
+		if !strings.Contains(file.URLPrivateDownload, "slack.com") {
+			continue
+		}
+		filename := id
+		if file.Name != "" {
+			// adding id prefix to filename to avoid collisions (like a few files named image.png)
+			filename += "-" + file.Name
+		}
+		path := filepath.Join(cfg.Output, channelID, filename)
+
+		if skipDownloaded {
+			if _, err := os.Stat(path); err == nil {
+				result[id] = filename
+				continue
+			}
+		}
+
+		if err := sc.downloadFile(path, file); err != nil {
 			log.Printf("could not download file %q: %v", id, err)
 		}
 
@@ -467,55 +487,38 @@ func (sc *SlackClient) DownloadFiles(channelID string) (map[string]string, error
 	return result, nil
 }
 
-func (sc *SlackClient) downloadFile(path, id, fileURL string) (string, error) {
-	req, err := http.NewRequestWithContext(sc.ctx, http.MethodGet, fileURL, http.NoBody)
+func (sc *SlackClient) downloadFile(path string, file *slack.File) error {
+	req, err := http.NewRequestWithContext(sc.ctx, http.MethodGet, file.URLPrivateDownload, http.NoBody)
 	if err != nil {
-		return "", fmt.Errorf("could not create request: %w", err)
+		return fmt.Errorf("could not create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+sc.token)
 
 	err = sc.limiter.Wait(sc.ctx)
 	if err != nil {
-		return "", fmt.Errorf("rate limit error: %w", err)
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("could not send request: %w", err)
+		return fmt.Errorf("could not send request: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%w: %d", errBadStatus, resp.StatusCode)
-	}
-
-	// read content-disposition header
-	disposition := resp.Header.Get("Content-Disposition")
-	if disposition == "" {
-		return "", errNoContentDisposition
-	}
-
-	// extract filename from content-disposition header
-	filename := strings.TrimPrefix(disposition, "attachment; filename=\"")
-	// remove everything after ";
-	filename = strings.Split(filename, "\";")[0]
-
-	// if filename is empty, use the id
-	if filename == "" {
-		filename = id
+		return fmt.Errorf("%w: %d", errBadStatus, resp.StatusCode)
 	}
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("could not read body: %w", err)
+		return fmt.Errorf("could not read body: %w", err)
 	}
 
-	// adding id prefix to filename to avoid collisions (like a few files named image.png)
-	err = os.WriteFile(filepath.Join(cfg.Output, path, id+"-"+filename), content, 0o600)
+	err = os.WriteFile(path, content, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("could not write file: %w", err)
+		return fmt.Errorf("could not write file: %w", err)
 	}
 
-	return filename, nil
+	return nil
 }

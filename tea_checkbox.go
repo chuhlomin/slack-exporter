@@ -16,25 +16,29 @@ type choice struct {
 type modelChoices struct {
 	focusIndex int
 	choices    []choice
-	selected   map[int]struct{}
+	selected   map[int]interface{}
 }
 
 const (
 	downloadAvatarsIndex = 4
 	downloadFilesIndex   = 5
 	includeArchivedIndex = 6
+	skipDownloadedIndex  = 7
 )
 
-func initialModelChoices(downloadAvatars, downloadFiles, includeArchived bool) modelChoices {
-	selected := make(map[int]struct{})
+func initialModelChoices(downloadAvatars, downloadFiles, includeArchived, skipDownloaded bool) modelChoices {
+	selected := make(map[int]interface{})
 	if downloadAvatars {
-		selected[downloadAvatarsIndex] = struct{}{}
+		selected[downloadAvatarsIndex] = nil
 	}
 	if downloadFiles {
-		selected[downloadFilesIndex] = struct{}{}
+		selected[downloadFilesIndex] = nil
 	}
 	if includeArchived {
-		selected[includeArchivedIndex] = struct{}{}
+		selected[includeArchivedIndex] = nil
+	}
+	if skipDownloaded {
+		selected[skipDownloadedIndex] = nil
 	}
 
 	return modelChoices{
@@ -46,6 +50,7 @@ func initialModelChoices(downloadAvatars, downloadFiles, includeArchived bool) m
 			{"downloadAvatars", "Download avatars", false},
 			{"downloadFiles", "Download files", false},
 			{"includeArchived", "Include archived channels", false},
+			{"skipDownloaded", "Skip downloaded", false},
 		},
 		selected: selected,
 	}
