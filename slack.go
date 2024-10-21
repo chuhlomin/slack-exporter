@@ -24,7 +24,6 @@ import (
 
 var (
 	errChannelRequired      = fmt.Errorf("argument 'channel' is required")
-	errNoContentDisposition = fmt.Errorf("no content-disposition header")
 	errInvalidTokenResponse = fmt.Errorf("invalid token response")
 	errCodeRequired         = fmt.Errorf("argument 'code' is required")
 	errUser00               = fmt.Errorf("user U00 is not found")

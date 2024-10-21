@@ -35,10 +35,7 @@ type config struct {
 	SkipArchived bool   `long:"skip-archived" description:"Skip archived channels"`
 }
 
-var (
-	errChannelIsArchived = fmt.Errorf("channel is archived")
-	errNoMessages        = fmt.Errorf("no messages")
-)
+var errNoMessages = fmt.Errorf("no messages")
 
 //go:embed template.html
 var tmpl string
