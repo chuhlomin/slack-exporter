@@ -103,19 +103,20 @@ func run() error {
 		}
 
 		for i := range model.selected {
-			if model.choices[i].isChannel {
+			c := model.choices[i]
+			if c.isChannel {
 				cfg.Channels += model.choices[i].value + ","
 			}
-			if i == downloadAvatarsIndex {
+			if c.value == choiceValueDownloadAvatars {
 				cfg.DownloadAvatars = true
 			}
-			if i == downloadFilesIndex {
+			if c.value == chocieValueDownloadFiles {
 				cfg.DownloadFiles = true
 			}
-			if i == includeArchivedIndex {
+			if c.value == choiceValueIncludeArchived {
 				cfg.IncludeArchived = true
 			}
-			if i == skipDownloadedIndex {
+			if c.value == choiceValueSkipDownloaded {
 				cfg.SkipDownloaded = true
 			}
 		}

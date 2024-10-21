@@ -13,45 +13,47 @@ type choice struct {
 	isChannel bool
 }
 
+const (
+	choiceValueDownloadAvatars = "downloadAvatars"
+	chocieValueDownloadFiles   = "downloadFiles"
+	choiceValueIncludeArchived = "includeArchived"
+	choiceValueSkipDownloaded  = "skipDownloaded"
+)
+
 type modelChoices struct {
 	focusIndex int
 	choices    []choice
 	selected   map[int]interface{}
 }
 
-const (
-	downloadAvatarsIndex = 4
-	downloadFilesIndex   = 5
-	includeArchivedIndex = 6
-	skipDownloadedIndex  = 7
-)
-
 func initialModelChoices(downloadAvatars, downloadFiles, includeArchived, skipDownloaded bool) modelChoices {
+	choices := []choice{
+		// {"public_channel", "Public channels", true},
+		// {"private_channel", "Private channels", true},
+		{"im", "DM", true},
+		{"mpim", "Group DM", true},
+		{choiceValueDownloadAvatars, "Download avatars", false},
+		{chocieValueDownloadFiles, "Download files", false},
+		{choiceValueIncludeArchived, "Include archived channels", false},
+		{choiceValueSkipDownloaded, "Skip downloaded", false},
+	}
+
 	selected := make(map[int]interface{})
-	if downloadAvatars {
-		selected[downloadAvatarsIndex] = nil
-	}
-	if downloadFiles {
-		selected[downloadFilesIndex] = nil
-	}
-	if includeArchived {
-		selected[includeArchivedIndex] = nil
-	}
-	if skipDownloaded {
-		selected[skipDownloadedIndex] = nil
+	for i, c := range choices {
+		switch {
+		case c.value == choiceValueDownloadAvatars && downloadAvatars:
+			selected[i] = nil
+		case c.value == chocieValueDownloadFiles && downloadFiles:
+			selected[i] = nil
+		case c.value == choiceValueIncludeArchived && includeArchived:
+			selected[i] = nil
+		case c.value == choiceValueSkipDownloaded && skipDownloaded:
+			selected[i] = nil
+		}
 	}
 
 	return modelChoices{
-		choices: []choice{
-			// {"public_channel", "Public channels", true},
-			{"private_channel", "Private channels", true},
-			{"im", "DM", true},
-			{"mpim", "Group DM", true},
-			{"downloadAvatars", "Download avatars", false},
-			{"downloadFiles", "Download files", false},
-			{"includeArchived", "Include archived channels", false},
-			{"skipDownloaded", "Skip downloaded", false},
-		},
+		choices:  choices,
 		selected: selected,
 	}
 }
