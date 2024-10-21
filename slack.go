@@ -63,7 +63,7 @@ type SlackClient struct {
 	token        string
 	api          *slack.Client
 	seenUsers    map[string]interface{}
-	files        map[string]string // id -> url_private_download
+	files        map[string]*slack.File // id -> file
 
 	UsersCache map[string]*slack.User
 }
@@ -77,7 +77,7 @@ func NewSlackClient(id, secret string) *SlackClient {
 		clientID:     id,
 		clientSecret: secret,
 		seenUsers:    make(map[string]interface{}),
-		files:        make(map[string]string),
+		files:        make(map[string]*slack.File),
 		UsersCache:   make(map[string]*slack.User),
 	}
 }
@@ -384,22 +384,22 @@ func (sc *SlackClient) getReplies(channel, messageID string) ([]slack.Message, e
 	}
 	filteredReplies := filterFn(allReplies, messageID)
 
-	// Add attachments to slice
 	for _, reply := range filteredReplies {
-		if reply.Files != nil {
-			for _, file := range reply.Files {
-				if file.URLPrivateDownload == "" {
-					continue
-				}
-				sc.files[file.ID] = file.URLPrivateDownload
-			}
-		}
+		sc.lookupUsersAndFiles(reply)
 	}
 
 	return filteredReplies, nil
 }
 
 func (sc *SlackClient) convertToMsg(message slack.Message) structs.Message {
+	sc.lookupUsersAndFiles(message)
+
+	return structs.Message{
+		Message: message,
+	}
+}
+
+func (sc *SlackClient) lookupUsersAndFiles(message slack.Message) {
 	sc.seenUsers[message.User] = nil
 
 	for _, block := range message.Blocks.BlockSet {
@@ -409,17 +409,19 @@ func (sc *SlackClient) convertToMsg(message slack.Message) structs.Message {
 		}
 	}
 
+	for _, reaction := range message.Reactions {
+		for _, user := range reaction.Users {
+			sc.seenUsers[user] = nil
+		}
+	}
+
 	if message.Files != nil {
 		for _, file := range message.Files {
 			if file.URLPrivateDownload == "" {
 				continue
 			}
-			sc.files[file.ID] = file.URLPrivateDownload
+			sc.files[file.ID] = &file
 		}
-	}
-
-	return structs.Message{
-		Message: message,
 	}
 }
 
@@ -483,6 +485,8 @@ func (sc *SlackClient) DownloadFiles(channelID string, skipDownloaded bool) (map
 
 		result[id] = filename
 	}
+
+	sc.files = make(map[string]*slack.File)
 
 	return result, nil
 }
