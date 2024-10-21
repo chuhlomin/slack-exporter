@@ -14,14 +14,16 @@ import (
 
 	_ "embed"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/jessevdk/go-flags"
 	"github.com/slack-go/slack"
 	"golang.org/x/time/rate"
 )
 
 type config struct {
-	Token  string `env:"API_TOKEN" long:"token" description:"Slack API token" required:"true"`
-	Output string `long:"output" description:"Output directory file" required:"true"`
+	Token          string `env:"API_TOKEN" long:"token" description:"Slack API token" required:"true"`
+	Output         string `long:"output" description:"Output directory file" default:"output"`
+	SkipDownloaded bool   `long:"skip-downloaded" description:"Skip already downloaded files"`
 }
 
 var (
@@ -46,12 +48,34 @@ func run() error {
 		return fmt.Errorf("could not get emoji: %w", err)
 	}
 
+	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
+	fmt.Print(prog.ViewAs(0))
+
+	var counter int
 	for id, url := range emoji {
+		fmt.Printf(
+			"\r%s (%d/%d)",
+			prog.ViewAs(float64(counter+1)/float64(len(emoji))),
+			counter+1,
+			len(emoji),
+		)
+
+		counter++
+
 		if strings.HasPrefix(url, "alias:") {
 			continue
 		}
 
-		err := downloadFile(id, url, cfg.Output)
+		ext := filepath.Ext(url)
+		path := filepath.Join(cfg.Output, id+ext)
+
+		if cfg.SkipDownloaded {
+			if _, err := os.Stat(path); err == nil {
+				continue
+			}
+		}
+
+		err := downloadFile(path, url)
 		if err != nil {
 			return fmt.Errorf("could not download file: %w", err)
 		}
@@ -73,7 +97,7 @@ func run() error {
 
 var limiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
 
-func downloadFile(id, fileURL, output string) error {
+func downloadFile(path, fileURL string) error {
 	ctx := context.Background()
 	err := limiter.Wait(ctx)
 	if err != nil {
@@ -96,9 +120,7 @@ func downloadFile(id, fileURL, output string) error {
 		return fmt.Errorf("%w: %d", errBadStatus, resp.StatusCode)
 	}
 
-	ext := filepath.Ext(fileURL)
-	filename := filepath.Join(output, id+ext)
-	file, err := os.Create(filename)
+	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("could not create file: %w", err)
 	}
