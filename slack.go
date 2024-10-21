@@ -27,6 +27,7 @@ var (
 	errNoContentDisposition = fmt.Errorf("no content-disposition header")
 	errInvalidTokenResponse = fmt.Errorf("invalid token response")
 	errCodeRequired         = fmt.Errorf("argument 'code' is required")
+	errUser00               = fmt.Errorf("user U00 is not found")
 )
 
 // TokenResponse represents the response from the Slack API when requesting a token.
@@ -228,6 +229,9 @@ func (sc *SlackClient) GetUsers() (map[string]*slack.User, error) {
 
 		u, err := sc.GetUserWithRetry(user)
 		if err != nil {
+			if errors.Is(err, errUser00) {
+				continue
+			}
 			if strings.Contains(err.Error(), "user_not_found") {
 				log.Printf("User %q not found", user)
 				continue
@@ -243,6 +247,10 @@ func (sc *SlackClient) GetUsers() (map[string]*slack.User, error) {
 }
 
 func (sc *SlackClient) GetUserWithRetry(user string) (*slack.User, error) {
+	if user == "U00" {
+		return nil, errUser00
+	}
+
 	err := sc.limiter.Wait(sc.ctx)
 	if err != nil {
 		return nil, fmt.Errorf("rate limit error: %w", err)
@@ -256,6 +264,27 @@ func (sc *SlackClient) GetUserWithRetry(user string) (*slack.User, error) {
 			time.Sleep(rateLimitErr.RetryAfter)
 			return sc.GetUserWithRetry(user)
 		}
+
+		if err.Error() == "user_not_found" {
+			// check if user is in cache
+			if u, ok := sc.UsersCache[user]; ok {
+				return u, nil
+			}
+
+			// fallback to user lookup by display name
+			users, err := sc.api.GetUsers()
+			if err != nil {
+				return nil, fmt.Errorf("could not get users: %w", err)
+			}
+
+			for _, u := range users {
+				if u.Profile.DisplayName == user {
+					sc.UsersCache[user] = &u
+					return &u, nil
+				}
+			}
+		}
+
 		return nil, fmt.Errorf("%q: %w", user, err)
 	}
 
