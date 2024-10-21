@@ -205,7 +205,7 @@ video, img {
     {{ $checkPrevMessage := false }}
     {{ $prevMessage := index .Messages 0 }}
     {{ range .Messages }}
-    {{ $user := lookupUser .User $.Users }}
+    {{ $user := lookupUser .User $.Users "messages" }}
     <li class="message-container">
         {{ if eq .SubType "channel_join" }}
         <img class="avatar" src="{{ avatar $user }}">
@@ -227,6 +227,8 @@ video, img {
         {{- if and (ne .User "USLACKBOT") .BotProfile }}
             {{ $botName = .BotProfile.Name }}
             {{ $botIcon = .BotProfile.Icons.Image72 }}
+        {{ else if eq .Text "A file was commented on" }}
+        {{/* ignore */}}}}
         {{ end }}
         <img class="avatar" src="{{ $botIcon }}" alt="{{ $botName }}">
         <span id="p{{ replace .Timestamp "." "" }}">
@@ -275,7 +277,7 @@ video, img {
         {{ $checkPrevMessage = false }}
         <ul class="replies">
             {{ range . }}
-            {{ $user := lookupUser .User $.Users }}
+            {{ $user := lookupUser .User $.Users "replies" }}
             {{ $newContext := or (not $checkPrevMessage) (not (sameSlackMessage $prevMessage .)) }}
             <li class="message-container">
                 {{ if $newContext }}

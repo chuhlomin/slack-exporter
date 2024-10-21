@@ -21,6 +21,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/enescakir/emoji"
+	"github.com/gomarkdown/markdown"
 	"github.com/jessevdk/go-flags"
 	"github.com/slack-go/slack"
 
@@ -100,7 +101,15 @@ var (
 						processRichTextElements(block.(*slack.RichTextBlock).Elements, users),
 					)
 				case slack.MBTSection:
-					sb.WriteString(block.(*slack.SectionBlock).Text.Text)
+					if block.(*slack.SectionBlock).Text != nil {
+						textBlock := block.(*slack.SectionBlock).Text
+						sb.WriteString(textWithType(textBlock.Text, textBlock.Type))
+					}
+					if block.(*slack.SectionBlock).Fields != nil {
+						for _, field := range block.(*slack.SectionBlock).Fields {
+							sb.WriteString(textWithType(field.Text, field.Type))
+						}
+					}
 				}
 			}
 
@@ -596,4 +605,15 @@ func title(channel slack.Channel, users map[string]*slack.User) string {
 		}
 		return "# " + channel.Name
 	}
+}
+
+func textWithType(text, textType string) string {
+	switch textType {
+	case "mrkdwn":
+		return string(markdown.ToHTML([]byte(text), nil, nil))
+	case "plain_text":
+		return html.EscapeString(text)
+	}
+
+	return text
 }
