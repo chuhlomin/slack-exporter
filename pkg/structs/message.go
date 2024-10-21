@@ -64,3 +64,16 @@ type Data struct {
 	Users    map[string]*slack.User `json:"users"`
 	Files    map[string]string      `json:"files"`
 }
+
+func GetChannelName(sc slack.Channel) string {
+	if sc.Name != "" {
+		return sc.Name
+	}
+	if sc.IsGeneral {
+		return "general"
+	}
+	if sc.IsIM {
+		return sc.User
+	}
+	return sc.ID
+}

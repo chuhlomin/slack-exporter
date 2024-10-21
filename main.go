@@ -41,9 +41,13 @@ var (
 )
 
 func main() {
+	log.Printf("Starting...")
+
 	if err := run(); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+
+	log.Printf("Done")
 }
 
 func run() error {
@@ -157,6 +161,7 @@ func run() error {
 	}
 
 	if cfg.DownloadAvatars {
+		fmt.Println()
 		log.Println("Downloading avatars")
 		if err := downloadAvatars(c); err != nil {
 			return fmt.Errorf("could not download avatars: %w", err)
@@ -273,20 +278,21 @@ func exportChannels(c *SlackClient, types []string, skipDownloaded bool) error {
 	previousName := ""
 
 	for i, channel := range channels {
+		name := structs.GetChannelName(channel)
 		fmt.Printf(
 			"\r%s (%d/%d) %s%s%s",
 			prog.ViewAs(float64(i+1)/float64(len(channels))),
 			i+1,
 			len(channels),
-			channel.Name,
-			strings.Repeat(" ", max(0, len(previousName)-len(channel.Name))),
-			strings.Repeat("\b", max(0, len(previousName)-len(channel.Name))),
+			name,
+			strings.Repeat(" ", max(0, len(previousName)-len(name))),
+			strings.Repeat("\b", max(0, len(previousName)-len(name))),
 		)
-		err := exportChannel(c, channel.ID)
+		err := exportChannel(c, channel.ID, skipDownloaded)
 		if err != nil {
-			return fmt.Errorf("could not export channel %q: %w", channel.Name, err)
+			return fmt.Errorf("could not export channel %q: %w", name, err)
 		}
-		previousName = channel.Name
+		previousName = name
 	}
 
 	fmt.Printf(

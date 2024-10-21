@@ -19,6 +19,7 @@ import (
 
 	_ "embed"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/enescakir/emoji"
 	"github.com/jessevdk/go-flags"
 	"github.com/slack-go/slack"
@@ -29,7 +30,7 @@ import (
 type config struct {
 	Input        string `long:"input" short:"i" description:"Input JSON file or directory"`
 	Output       string `long:"output" short:"o" description:"Output HTML file or directory"`
-	EmojiDir     string `long:"emoji" description:"Directory with emoji" default:"emoji"`
+	EmojiDir     string `long:"emoji" description:"Directory with emoji" default:"output/emoji"`
 	SkipArchived bool   `long:"skip-archived" description:"Skip archived channels"`
 }
 
@@ -64,7 +65,7 @@ var (
 			names := make([]string, 0, len(ids))
 
 			for _, id := range ids {
-				names = append(names, username((lookupUser(id, users))))
+				names = append(names, username((lookupUser(id, users, "usersList"))))
 			}
 
 			return strings.Join(names, ", ")
@@ -81,7 +82,7 @@ var (
 			unixPart := t[:dotIndex]
 			sec, err := strconv.ParseInt(unixPart, 10, 64)
 			if err != nil {
-				log.Printf("could not parse time: %v", err)
+				fmt.Printf("\ncould not parse time: %v", err)
 				return t
 			}
 
@@ -91,6 +92,7 @@ var (
 		"replace": strings.ReplaceAll,
 		"format": func(blocks slack.Blocks, users map[string]*slack.User) template.HTML {
 			sb := &strings.Builder{}
+
 			for _, block := range blocks.BlockSet {
 				switch block.BlockType() {
 				case slack.MBTRichText:
@@ -111,7 +113,7 @@ var (
 				if url == "" {
 					url = file.URLPrivate
 				}
-				return template.HTML(fmt.Sprintf("<a href=%q>%s</a>", url, file.Title)) // #nosec G203
+				return template.HTML(fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", url, file.Title)) // #nosec G203
 			}
 
 			// url-encode filename (account for \u202f symbol)
@@ -123,7 +125,7 @@ var (
 				return template.HTML( // #nosec G203
 					fmt.Sprintf(
 						"<img loading=\"lazy\" src=%q alt=%q class=\"attachment\" width=\"%d\" height=\"%d\"/>",
-						filepath.Join(channel.ID, file.ID+"-"+filename),
+						filepath.Join(channel.ID, filename),
 						file.Title,
 						w, h,
 					),
@@ -132,7 +134,7 @@ var (
 				return template.HTML( // #nosec G203
 					fmt.Sprintf(
 						"<video controls preload=\"none\" src=%q alt=%q class=\"attachment\"/>",
-						filepath.Join(channel.ID, file.ID+"-"+filename),
+						filepath.Join(channel.ID, filename),
 						file.Title,
 					),
 				)
@@ -140,8 +142,8 @@ var (
 			default:
 				return template.HTML( // #nosec G203
 					fmt.Sprintf(
-						"<a href=%q download=%q>%s</a>",
-						filepath.Join(channel.ID, file.ID+"-"+filename),
+						"<a href=%q download=%q target=\"_blank\">%s</a>",
+						filepath.Join(channel.ID, filename),
 						file.Name,
 						file.Title,
 					),
@@ -152,9 +154,13 @@ var (
 )
 
 func main() {
+	log.Printf("Starting...")
+
 	if err := run(); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+
+	log.Printf("Done")
 }
 
 var slackEmoji emojiMap
@@ -219,7 +225,11 @@ func processDirectory(input, output string, t *template.Template) error {
 
 	var allFiles []*structs.Data
 
-	for _, file := range files {
+	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
+	fmt.Print(prog.ViewAs(0))
+	previousName := ""
+
+	for i, file := range files {
 		if file.IsDir() {
 			continue
 		}
@@ -228,36 +238,57 @@ func processDirectory(input, output string, t *template.Template) error {
 			continue
 		}
 
-		outputFilename := strings.TrimSuffix(file.Name(), ".json") + ".html"
-
-		log.Printf("Processing file %q", file.Name())
-		data, err := processFile(
-			filepath.Join(input, file.Name()),
-			filepath.Join(output, outputFilename),
-			t,
-		)
+		data, err := parseFile(filepath.Join(input, file.Name()))
 		if err != nil {
-			if errors.Is(err, errChannelIsArchived) {
-				log.Printf("Channel is archived, skipping")
-				continue
-			}
+			return fmt.Errorf("could not parse file %q: %w", file.Name(), err)
+		}
+		if data.Channel.IsArchived && cfg.SkipArchived {
+			continue
+		}
 
+		name := structs.GetChannelName(data.Channel)
+		fmt.Printf(
+			"\r%s (%d/%d) %s%s%s",
+			prog.ViewAs(float64(i+1)/float64(len(files))),
+			i+1,
+			len(files),
+			name,
+			strings.Repeat(" ", max(0, len(previousName)-len(name))),
+			strings.Repeat("\b", max(0, len(previousName)-len(name))),
+		)
+		previousName = name
+
+		outputFilename := strings.TrimSuffix(file.Name(), ".json") + ".html"
+		if err = executeTemplate(data, outputFilename, t); err != nil {
 			if errors.Is(err, errNoMessages) {
-				log.Printf("No messages found, skipping")
 				continue
 			}
 
-			return fmt.Errorf("could not process file %q: %w", file.Name(), err)
+			return fmt.Errorf("\ncould not process file %q: %w", file.Name(), err)
 		}
 
 		allFiles = append(allFiles, data)
 	}
 
+	fmt.Printf("\n")
 	log.Printf("Generating index")
 	return generateIndex(output, allFiles, it)
 }
 
 func processFile(input, output string, t *template.Template) (*structs.Data, error) {
+	data, err := parseFile(input)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse file: %w", err)
+	}
+
+	if err := executeTemplate(data, output, t); err != nil {
+		return nil, fmt.Errorf("could not execute template: %w", err)
+	}
+
+	return data, nil
+}
+
+func parseFile(input string) (*structs.Data, error) {
 	var data structs.Data
 	content, err := os.ReadFile(input)
 	if err != nil {
@@ -268,26 +299,25 @@ func processFile(input, output string, t *template.Template) (*structs.Data, err
 		return nil, fmt.Errorf("could not unmarshal messages: %w", err)
 	}
 
-	if data.Channel.IsArchived && cfg.SkipArchived {
-		return nil, errChannelIsArchived
-	}
+	return &data, nil
+}
 
+func executeTemplate(data *structs.Data, output string, t *template.Template) error {
 	if len(data.Messages) == 0 {
-		return nil, errNoMessages
+		return errNoMessages
 	}
+	slices.Reverse(data.Messages)
 
 	o, err := os.Create(output)
 	if err != nil {
-		return nil, fmt.Errorf("could not create file: %w", err)
+		return fmt.Errorf("could not create file: %w", err)
 	}
-
-	slices.Reverse(data.Messages)
 
 	if err := t.Execute(o, data); err != nil {
-		return nil, fmt.Errorf("could not execute template: %w", err)
+		return fmt.Errorf("could not execute template: %w", err)
 	}
 
-	return &data, nil
+	return nil
 }
 
 func generateIndex(output string, data []*structs.Data, t *template.Template) error {
@@ -312,7 +342,7 @@ func generateIndex(output string, data []*structs.Data, t *template.Template) er
 	return nil
 }
 
-func lookupUser(id string, users map[string]*slack.User) *slack.User {
+func lookupUser(id string, users map[string]*slack.User, caller string) *slack.User {
 	if id == "" {
 		return nil
 	}
@@ -325,7 +355,7 @@ func lookupUser(id string, users map[string]*slack.User) *slack.User {
 		return user
 	}
 
-	log.Printf("User not found: %s", id)
+	fmt.Printf("\nUser not found from %s: %s\n", caller, id)
 	return nil
 }
 
@@ -420,16 +450,16 @@ func processRichTextElements(
 				case slack.RTSEText:
 					te, ok := rtEelement.(*slack.RichTextSectionTextElement)
 					if !ok {
-						log.Printf("could not cast to RichTextSectionTextElement")
+						fmt.Printf("\ncould not cast to RichTextSectionTextElement")
 						continue
 					}
 					text := html.EscapeString(te.Text)
 					sb.WriteString(text)
 				case slack.RTSELink:
 					if rtEelement.(*slack.RichTextSectionLinkElement).Text != "" {
-						sb.WriteString(fmt.Sprintf("<a href=%q>%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).Text))
+						sb.WriteString(fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).Text))
 					} else {
-						sb.WriteString(fmt.Sprintf("<a href=%q>%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).URL))
+						sb.WriteString(fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).URL))
 					}
 				}
 			}
@@ -479,7 +509,7 @@ func processRichTextSectionElements(elements []slack.RichTextSectionElement, use
 		case slack.RTSEText:
 			te, ok := rtEelement.(*slack.RichTextSectionTextElement)
 			if !ok {
-				log.Printf("could not cast to RichTextSectionTextElement")
+				fmt.Printf("\ncould not cast to RichTextSectionTextElement")
 				continue
 			}
 			text := html.EscapeString(te.Text)
@@ -512,7 +542,7 @@ func processRichTextSectionElements(elements []slack.RichTextSectionElement, use
 		case slack.RTSEUser:
 			sb.WriteString(
 				"<span class=\"user\">" +
-					username(lookupUser(rtEelement.(*slack.RichTextSectionUserElement).UserID, users)) +
+					username(lookupUser(rtEelement.(*slack.RichTextSectionUserElement).UserID, users, "textSection")) +
 					"</span>",
 			)
 		case slack.RTSEEmoji:
@@ -521,9 +551,9 @@ func processRichTextSectionElements(elements []slack.RichTextSectionElement, use
 			)
 		case slack.RTSELink:
 			if rtEelement.(*slack.RichTextSectionLinkElement).Text != "" {
-				sb.WriteString(fmt.Sprintf("<a href=%q>%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).Text))
+				sb.WriteString(fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).Text))
 			} else {
-				sb.WriteString(fmt.Sprintf("<a href=%q>%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).URL))
+				sb.WriteString(fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", rtEelement.(*slack.RichTextSectionLinkElement).URL, rtEelement.(*slack.RichTextSectionLinkElement).URL))
 			}
 		}
 	}
@@ -552,7 +582,7 @@ func maxLength(w, h, maxW, maxH int) (width, height int) {
 func title(channel slack.Channel, users map[string]*slack.User) string {
 	switch {
 	case channel.IsIM:
-		return "👤 " + username(lookupUser(channel.User, users))
+		return "👤 " + username(lookupUser(channel.User, users, "title"))
 	case channel.IsGroup, channel.IsMpIM:
 		return strings.Replace(
 			channel.Purpose.Value,
