@@ -115,6 +115,14 @@ video, img {
   text-decoration-thickness: 0.01em;
 }
 
+.attachment {
+  border-left: 3px solid var(--color);
+}
+
+.attachment .text {
+  margin-left: 1em;
+}
+
 .message > ul,
 .message > ol {
   margin: 0;
@@ -266,6 +274,16 @@ video, img {
             {{ $checkPrevMessage = true }}
         {{ end }}
         <div {{ if not $newContext }}id="p{{ replace .Timestamp "." "" }}" {{ end }}class="message{{ if not $newContext }} same{{ end }}">{{ format .Blocks $.Users }}
+          {{ range .Attachments }}
+          <div class="attachment" style="--color: #{{ .Color }}">
+            {{ if .Blocks.BlockSet }}
+              {{ format .Blocks $.Users }}
+            {{ else }}
+              <span class="timestamp">{{ formatTime .Ts.String }}</span><br>
+              <div class="text">{{ .Text }}</div>
+            {{ end }}
+          </div>
+          {{ end }}
           {{ with .Files }}
           <div class="files">{{ range . }}<div class="file">{{ attachment . $.Files $.Channel }}</div>{{ end }}</div>
           {{ end }}
