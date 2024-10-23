@@ -509,6 +509,11 @@ func processRichTextElements(
 	return result.String()
 }
 
+var (
+	slackLinkReplacer        = regexp.MustCompile(`&lt;https:\/\/([^|]+)\|([^&]+)&gt;`)
+	slackUserMentionReplacer = regexp.MustCompile(`&lt;@([^&]+)&gt;`)
+)
+
 func processRichTextSectionElements(elements []slack.RichTextSectionElement, users map[string]*slack.User) string {
 	sb := strings.Builder{}
 	var code bool
@@ -521,7 +526,29 @@ func processRichTextSectionElements(elements []slack.RichTextSectionElement, use
 				fmt.Printf("\ncould not cast to RichTextSectionTextElement")
 				continue
 			}
+
 			text := html.EscapeString(te.Text)
+
+			// replace all Slack style links <https://example.com|example> with HTML links
+			text = slackLinkReplacer.ReplaceAllStringFunc(text, func(s string) string {
+				s = strings.TrimPrefix(s, "&lt;")
+				s = strings.TrimSuffix(s, "&gt;")
+				parts := strings.Split(s, "|")
+				if len(parts) == 1 {
+					return fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", parts[0], parts[0])
+				}
+				return fmt.Sprintf("<a href=%q target=\"_black\">%s</a>", parts[0], parts[1])
+			})
+
+			// replace Slack user mentions <@U123456> with usernames
+			text = slackUserMentionReplacer.ReplaceAllStringFunc(text, func(s string) string {
+				id := s[5 : len(s)-4]
+				return fmt.Sprintf(
+					"<span class=\"user\">%s</span>",
+					username(lookupUser(id, users, "textSection")),
+				)
+			})
+
 			text = strings.ReplaceAll(text, "\n", "<br>")
 
 			if code && (te.Style == nil || !te.Style.Code) {
