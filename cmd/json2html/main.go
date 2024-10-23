@@ -176,10 +176,6 @@ func run() error {
 		return fmt.Errorf("could not parse flags: %w", err)
 	}
 
-	if cfg.Output == "" {
-		cfg.Output = cfg.Input
-	}
-
 	if cfg.EmojiDir != "" {
 		var err error
 		slackEmoji, err = loadSlackEmoji(filepath.Join(cfg.EmojiDir, "emoji.json"))
@@ -204,11 +200,18 @@ func run() error {
 	}
 
 	if !info.IsDir() {
+		if cfg.Output == "" {
+			cfg.Output = strings.TrimSuffix(cfg.Input, filepath.Ext(cfg.Input)) + ".html"
+		}
 		_, err := processFile(cfg.Input, cfg.Output, t)
 		if err != nil {
 			return fmt.Errorf("could not process file %q: %w", cfg.Input, err)
 		}
 		return nil
+	}
+
+	if cfg.Output == "" {
+		cfg.Output = cfg.Input
 	}
 
 	return processDirectory(cfg.Input, cfg.Output, t)
@@ -264,7 +267,7 @@ func processDirectory(input, output string, t *template.Template) error {
 		)
 		previousName = name
 
-		outputFilename := strings.TrimSuffix(file.Name(), ".json") + ".html"
+		outputFilename := filepath.Join(output, strings.TrimSuffix(file.Name(), ".json")+".html")
 		if err = executeTemplate(data, outputFilename, t); err != nil {
 			if errors.Is(err, errNoMessages) {
 				continue
