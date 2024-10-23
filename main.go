@@ -139,8 +139,21 @@ func run() error {
 
 	channels := strings.Split(cfg.Channels, ",")
 
+	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
+	fmt.Print(prog.ViewAs(0))
+	previousName := ""
+
 	var channelTypes []string
-	for _, channel := range channels {
+	for i, channel := range channels {
+		fmt.Printf(
+			"\r%s %s%s%s",
+			prog.ViewAs(float64(i+1)/float64(len(channels))),
+			channel,
+			strings.Repeat(" ", max(0, len(previousName)-len(channel))),
+			strings.Repeat("\b", max(0, len(previousName)-len(channel))),
+		)
+		previousName = channel
+
 		switch channel {
 		case "public_channel", "private_channel", "mpim", "im":
 			channelTypes = append(channelTypes, channel)
@@ -153,6 +166,13 @@ func run() error {
 			}
 		}
 	}
+	fmt.Printf(
+		"\r%s %s%s",
+		prog.ViewAs(1),
+		strings.Repeat(" ", len(previousName)),
+		strings.Repeat("\b", len(previousName)),
+	)
+	fmt.Println()
 
 	if len(channelTypes) > 0 {
 		err := exportChannels(c, channelTypes, cfg.SkipDownloaded)
