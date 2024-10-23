@@ -221,6 +221,13 @@ video, img {
           <a class="timestamp" href="#p{{ replace .Timestamp "." "" }}">{{ formatTime .Timestamp }}</a>
           {{ $checkPrevMessage = false }}
         </span>
+        {{ else if eq .SubType "channel_archive" }}
+        <img class="avatar" src="{{ avatar $user }}" alt="{{ username $user }}">
+        <span id="p{{ replace .Timestamp "." "" }}">
+          <strong class="username">{{ username $user }}</strong> has archived the channel
+          <a class="timestamp" href="#p{{ replace .Timestamp "." "" }}">{{ formatTime .Timestamp }}</a>
+          {{ $checkPrevMessage = false }}
+        </span>
         {{ else if eq .SubType "bot_message" }}
         {{- $botName := "Slack bot" }}
         {{- $botIcon := "" }}
